@@ -1,6 +1,6 @@
-clear all
-close all
-clc
+clear all;
+close all;
+clc;
 
 % Load input data
 load('InputDataProject2.mat');
@@ -11,74 +11,88 @@ v = 2e5; % Speed of light in fiber (km/s)
 % Calculate propagation delay matrix (in seconds)
 D = L / v;
 
-% Parameters
-nNodes = size(L, 1); % Number of nodes
-nFlows = size(T, 1); % Number of flows
+% Initialize variables
+nNodes = size(Nodes, 1);
+nLinks = size(Links, 1);
+nFlows = size(T, 1);
+allCombinations = nchoosek(1:nNodes, 2); % All combinations of two nodes
 
-% Generate all possible combinations of 2 nodes
-combinations = nchoosek(1:nNodes, 2);
+bestAverageDelay = inf; % Initialize the best average round-trip delay
+bestCombination = [];
 
-% Initialize variables to track the best solution
-bestAverageDelay = inf;
-bestNodes = [];
-bestRoundTripDelays = zeros(1, nFlows);
-bestAverageDelays = zeros(1, 3);
-worstDelays = zeros(1, 3);
+% Iterate through all combinations of two nodes
+for combIdx = 1:size(allCombinations, 1)
+    % Select anycast nodes for the current combination
+    anycastNodes = allCombinations(combIdx, :);
 
-% Iterate over all combinations of anycast nodes
-for c = 1:size(combinations, 1)
-    anycastNodes = combinations(c, :);
-    roundTripDelays = zeros(1, nFlows);
-    
+    sP = cell(1, nFlows);
+    nSP = zeros(1, nFlows);
+    atrasos = zeros(1, nFlows);
+    Taux = zeros(nFlows, 4);
+
     for f = 1:nFlows
-        src = T(f, 2);
-        dst = T(f, 3);
-        service = T(f, 1);
-        
-        if service == 3 % Anycast service
-            % Find the closest anycast node
-            minDelay = inf;
-            for acNode = anycastNodes
-                [~, totalCost] = kShortestPath(D, src, acNode, 1);
-                if totalCost < minDelay
-                    minDelay = totalCost;
+        if T(f, 1) == 1 || T(f, 1) == 2  % Unicast services
+            [shortestPath, totalCost] = kShortestPath(D, T(f, 2), T(f, 3), 1);
+            sP{f} = shortestPath;
+            nSP(f) = length(shortestPath);
+            atrasos(f) = 2 * totalCost; % Round-trip delay
+            Taux(f, :) = T(f, 2:5);
+        elseif T(f, 1) == 3 % Anycast service
+            Taux(f, :) = T(f, 2:5);
+            [shortestPath1, totalCost1] = kShortestPath(D, T(f, 2), anycastNodes(1), 1);
+            [shortestPath2, totalCost2] = kShortestPath(D, T(f, 2), anycastNodes(2), 1);
+            if ismember(T(f, 2), anycastNodes)
+                sP{f} = {T(f, 2)};
+                nSP(f) = 1;
+                Taux(f, 2) = T(f, 2);
+            else
+                if totalCost1 < totalCost2
+                    sP{f} = shortestPath1;
+                    nSP(f) = length(shortestPath1);
+                    atrasos(f) = 2 * totalCost1; % Round-trip delay
+                    Taux(f, 2) = anycastNodes(1);
+                else
+                    sP{f} = shortestPath2;
+                    nSP(f) = length(shortestPath2);
+                    atrasos(f) = 2 * totalCost2;
+                    Taux(f, 2) = anycastNodes(2);
                 end
             end
-            roundTripDelays(f) = minDelay * 2; % Round-trip delay
-        else
-            % Unicast services
-            [~, totalCost] = kShortestPath(D, src, dst, 1);
-            roundTripDelays(f) = totalCost * 2; % Round-trip delay
         end
     end
-    
-    % Evaluate the average round-trip delay for the anycast service
-    currentAverageDelay = mean(roundTripDelays(T(:, 1) == 3));
-    
-    % Update best solution if the current average delay is better
-    if currentAverageDelay < bestAverageDelay
-        bestAverageDelay = currentAverageDelay;
-        bestNodes = anycastNodes;
-        bestRoundTripDelays = roundTripDelays;
-        bestAverageDelays(1) = mean(roundTripDelays(T(:, 1) == 1)); % Average for service 1
-        bestAverageDelays(2) = mean(roundTripDelays(T(:, 1) == 2)); % Average for service 2
-        bestAverageDelays(3) = currentAverageDelay; % Average for service 3
-        worstDelays(1) = max(roundTripDelays(T(:, 1) == 1));
-        worstDelays(2) = max(roundTripDelays(T(:, 1) == 2));
-        worstDelays(3) = max(roundTripDelays(T(:, 1) == 3));
+
+    % Compute the average round-trip delay for the current combination
+    anycastDelays = atrasos(T(:, 1) == 3);
+    averageAnycastDelay = mean(anycastDelays) * 1000; % Convert to milliseconds
+
+    if averageAnycastDelay < bestAverageDelay
+        bestAverageDelay = averageAnycastDelay;
+        bestCombination = anycastNodes;
+        bestUnicast1Delays = atrasos(T(:, 1) == 1);
+        bestUnicast2Delays = atrasos(T(:, 1) == 2);
+        bestAnycastDelays = anycastDelays;
+        bestSP = sP; 
     end
 end
 
-% Display the results
-fprintf('\n============================\n');
-fprintf('Best Anycast Nodes: %d and %d\n', bestNodes(1), bestNodes(2));
-fprintf('Average Round-Trip Delay (Anycast Service): %.2f ms\n', bestAverageDelay * 1e3);
-fprintf('Average Round-Trip Delays (ms):\n');
-fprintf('  Service 1: %.2f ms\n', bestAverageDelays(1) * 1e3);
-fprintf('  Service 2: %.2f ms\n', bestAverageDelays(2) * 1e3);
-fprintf('  Service 3: %.2f ms\n', bestAverageDelays(3) * 1e3);
-fprintf('Worst Round-Trip Delays (ms):\n');
-fprintf('  Service 1: %.2f ms\n', worstDelays(1) * 1e3);
-fprintf('  Service 2: %.2f ms\n', worstDelays(2) * 1e3);
-fprintf('  Service 3: %.2f ms\n', worstDelays(3) * 1e3);
-fprintf('============================\n');
+% Compute the link loads for the best combination
+sol = ones(1, nFlows);
+Loads = calculateLinkLoads(nNodes, Links, Taux, bestSP, sol);
+bestWorstLoad = max(max(Loads(:, 3:4))); % Compute the worst link load for the best combination
+
+% Compute metrics for the best combination
+averageUnicast1Delay = mean(bestUnicast1Delays) * 1000; % Convert to milliseconds
+worstUnicast1Delay = max(bestUnicast1Delays) * 1000; % Convert to milliseconds
+averageUnicast2Delay = mean(bestUnicast2Delays) * 1000; % Convert to milliseconds
+worstUnicast2Delay = max(bestUnicast2Delays) * 1000; % Convert to milliseconds
+worstAnycastDelay = max(bestAnycastDelays) * 1000; % Convert to milliseconds
+
+% Display results
+fprintf('Best anycast nodes = %d %d\n', bestCombination(1), bestCombination(2));
+fprintf('Average round-trip delay (anycast service 3) = %.2f ms\n', bestAverageDelay);
+fprintf('Worst link load = %.2f Gbps\n', bestWorstLoad);
+fprintf('Worst round-trip delay (unicast service 1) = %.2f ms\n', worstUnicast1Delay);
+fprintf('Average round-trip delay (unicast service 1) = %.2f ms\n', averageUnicast1Delay);
+fprintf('Worst round-trip delay (unicast service 2) = %.2f ms\n', worstUnicast2Delay);
+fprintf('Average round-trip delay (unicast service 2) = %.2f ms\n', averageUnicast2Delay);
+fprintf('Worst round-trip delay (anycast service 3) = %.2f ms\n', worstAnycastDelay);

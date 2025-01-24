@@ -1,10 +1,10 @@
-function [sol, load] = HillClimbingStrategy(nNodes, Links, T, sP, nSP, sol)
+function [sol, load] = HillClimbingStrategy1(nNodes, Links, T, sP, nSP, sol)
     nFlows = length(sol);
     improved = true;
     
     while improved
         improved = false;
-        currentLoad = calculateLinkLoads(nNodes, Links, T, sP, sol);
+        currentLoad = calculateLinkBand1to1(nNodes, Links, T, sP, sol);
         currentMaxLoad = max(max(currentLoad(:,3:4)));
         
         for f = 1:nFlows
@@ -12,7 +12,7 @@ function [sol, load] = HillClimbingStrategy(nNodes, Links, T, sP, nSP, sol)
                 if p ~= sol(f)
                     newSol = sol;
                     newSol(f) = p;
-                    newLoad = calculateLinkLoads(nNodes, Links, T, sP, newSol);
+                    newLoad = calculateLinkBand1to1(nNodes, Links, T, sP, newSol);
                     newMaxLoad = max(max(newLoad(:,3:4)));
                     
                     if newMaxLoad < currentMaxLoad

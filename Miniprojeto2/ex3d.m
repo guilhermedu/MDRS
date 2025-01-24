@@ -13,11 +13,11 @@ timeLimit = 60;
 
 v = 2e5; 
 D = L / v; 
-anycast_nodes = [1,6];
+anycast_nodes = [5,14];
 Taux = zeros(nFlows, 4);
 nSP = zeros(nFlows, 1);
 delays = cell(nFlows, 1);
-numPathsPerFlow = zeros(nFlows, 1); % Renomeado de nPd
+numPathsPerFlow = zeros(nFlows, 1);
 sP = cell(2, nFlows);
 
 for f = 1:nFlows
@@ -26,7 +26,7 @@ for f = 1:nFlows
         sP{1, f} = shortestPath;
         sP{2, f} = {};
         nSP(f) = length(shortestPath{1});
-        numPaths = length(totalCost);
+        numPaths = length(totalCost); 
         numPathsPerFlow(f) = numPaths; 
         delays{f} = totalCost;
         Taux(f, :) = T(f, 2:5);
@@ -92,7 +92,7 @@ worstDelay_s3 = max([delays{T(:,1) == 3}]);
 averageDelay_s3 = mean([delays{T(:,1) == 3}]); 
 
 
-fprintf("Multi start hill climbing with greedy randomized, anycast in nodes 1 and 6:\n")
+fprintf("Multi start hill climbing with greedy randomized, anycast in nodes 5 and 14:\n")
 fprintf("W = %.2f Gbps, No. sol = %d, Av. W = %.2f, time = %.2f sec\n", bestObjective, noCycles, avObjective, timeSolution)
 fprintf("Unicast 1 - Worst round-trip delay: %.2f ms\n", worstDelay_s1 * 2 * 10^3)
 fprintf("Unicast 1 - Average round-trip delay: %.2f ms\n", averageDelay_s1 * 2 * 10^3)

@@ -9,7 +9,7 @@ v = 2e5; % Speed of light in fiber (km/s)
 D = L / v; % Propagation delay matrix (in seconds)
 
 K = 6; % Number of shortest paths
-anycastNodes = [4, 12];
+anycastNodes = [5,14];
 nNodes = size(Nodes, 1);
 nLinks = size(Links, 1);
 nFlows = size(T, 1);
@@ -26,15 +26,16 @@ for f = 1:nFlows
         [shortestPath, totalCost] = kShortestPath(D, T(f, 2), T(f, 3), K);
         sP{f} = shortestPath;
         nSP(f) = length(shortestPath);
-        delays{f} = totalCost; 
+        delays{f} = totalCost; % Store all delay values for paths
         Taux(f, :) = T(f, 2:5);
     elseif T(f, 1) == 3 % Anycast service
         Taux(f, :) = T(f, 2:5);
+        % Caso o nó origem já seja um anycast node
         if ismember(T(f, 2), anycastNodes)
             sP{f} = {T(f, 2)};
             nSP(f) = 1;
             Taux(f, 2) = T(f, 2);
-            delays{f} = 0; 
+            delays{f} = 0; % Sem caminho real, atraso 0 pois o destino é o próprio nó
         else
             [shortestPath1, totalCost1] = kShortestPath(D, T(f, 2), anycastNodes(1), 1);
             [shortestPath2, totalCost2] = kShortestPath(D, T(f, 2), anycastNodes(2), 1);
@@ -48,7 +49,7 @@ for f = 1:nFlows
             else
                 sP{f} = shortestPath2;
                 nSP(f) = length(shortestPath2);
-                delays{f} = totalCost2; 
+                delays{f} = totalCost2;
                 Taux(f, 2) = anycastNodes(2);
             end
         end
@@ -79,7 +80,7 @@ while toc(t) < timeLimit
 end
 
 % Display results
-fprintf('Multi start hill climbing with greedy randomized (specific nodes 4 and 12 for anycast):\n');
+fprintf('Multi start hill climbing with greedy randomized (specific nodes 5 and 14 for anycast):\n');
 fprintf('\t W = %.2f Gbps, No. sol = %d, Av. W = %.2f, time = %.2f sec\n', bestLoad, contador, somador / contador, bestLoadTime);
 fprintf('Total number of cycles run: %d\n', contador);
 fprintf('Time when the best solution was found: %.2f sec\n', bestLoadTime);
@@ -91,16 +92,16 @@ unicast2Delays = [delays{T(:, 1) == 2}];
 anycastDelays = [delays{T(:, 1) == 3}];
 
 % Compute metrics for unicast service 1
-worstUnicast1Delay = max(unicast1Delays) * 2 * 1000; % Round-trip delay, convert to ms
-averageUnicast1Delay = mean(unicast1Delays) * 2 * 1000; % Round-trip delay, convert to ms
+worstUnicast1Delay = max(unicast1Delays) * 2 * 1000; 
+averageUnicast1Delay = mean(unicast1Delays) * 2 * 1000; 
 
 % Compute metrics for unicast service 2
-worstUnicast2Delay = max(unicast2Delays) * 2 * 1000; % Round-trip delay, convert to ms
-averageUnicast2Delay = mean(unicast2Delays) * 2 * 1000; % Round-trip delay, convert to ms
+worstUnicast2Delay = max(unicast2Delays) * 2 * 1000;
+averageUnicast2Delay = mean(unicast2Delays) * 2 * 1000; 
 
 % Compute metrics for anycast service
-worstAnycastDelay = max(anycastDelays) * 2 * 1000; % Round-trip delay, convert to ms
-averageAnycastDelay = mean(anycastDelays) * 2 * 1000; % Round-trip delay, convert to ms
+worstAnycastDelay = max(anycastDelays) * 2 * 1000; 
+averageAnycastDelay = mean(anycastDelays) * 2 * 1000; 
 
 % Display delay results
 fprintf('Anycast nodes = %d %d\n', anycastNodes(1), anycastNodes(2));

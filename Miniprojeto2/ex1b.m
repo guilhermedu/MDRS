@@ -1,6 +1,6 @@
-clear all
-close all
-clc
+clear all;
+close all;
+clc;
 
 % Load input data
 load('InputDataProject2.mat');
@@ -11,55 +11,82 @@ v = 2e5; % Speed of light in fiber (km/s)
 % Calculate propagation delay matrix (in seconds)
 D = L / v;
 
-% Parameters
-nNodes = size(L, 1); % Number of nodes
-nFlows = size(T, 1); % Number of flows
-
 % Define anycast nodes for service 3
 anycastNodes = [3, 10];
 
-% Initialize routing paths for all flows
-shortestPaths = cell(1, nFlows);
+% Initialize variables
+nFlows = size(T, 1);
+nNodes = size(Nodes, 1);
+nLinks = size(Links, 1);
+sP = cell(1, nFlows);
+nSP = zeros(1, nFlows);
+atrasos = zeros(1, nFlows);
+Taux = zeros(nFlows, 4);
 
-% Loop through each flow to calculate the shortest paths
 for f = 1:nFlows
-    src = T(f, 2);
-    dst = T(f, 3);
-    service = T(f, 1);
-
-    if service == 3 % Anycast service
-        % Find the closest anycast node
-        minDelay = inf;
-        bestPath = [];
-        for acNode = anycastNodes
-            [shortestPath, totalCost] = kShortestPath(D, src, acNode, 1);
-            if totalCost < minDelay
-                minDelay = totalCost;
-                bestPath = shortestPath{1};
+    if T(f, 1) == 1 || T(f, 1) == 2  % Unicast services (s = 1 and s = 2)
+        [shortestPath, totalCost] = kShortestPath(D, T(f, 2), T(f, 3), 1);
+        sP{f} = shortestPath;
+        nSP(f) = length(shortestPath);
+        atrasos(f) = 2 * totalCost; % Round-trip delay
+        Taux(f, :) = T(f, 2:5);
+    elseif T(f, 1) == 3  % Anycast service (s = 3)
+        Taux(f, :) = T(f, 2:5);
+        [shortestPath1, totalCost1] = kShortestPath(D, T(f, 2), anycastNodes(1), 1);
+        [shortestPath2, totalCost2] = kShortestPath(D, T(f, 2), anycastNodes(2), 1);
+        if ismember(T(f, 2), anycastNodes)
+            sP{f} = {T(f, 2)};
+            nSP(f) = 1;
+        else
+            if totalCost1 < totalCost2
+                sP{f} = shortestPath1;
+                nSP(f) = length(shortestPath1);
+                atrasos(f) = 2 * totalCost1; % Round-trip delay
+                Taux(f, 2) = anycastNodes(1);
+            else
+                sP{f} = shortestPath2;
+                nSP(f) = length(shortestPath2);
+                atrasos(f) = 2 * totalCost2;
+                Taux(f, 2) = anycastNodes(2);
             end
         end
-        % Store as a cell of cells for compatibility
-        shortestPaths{f} = {bestPath};
-    else
-        % Unicast services
-        [shortestPath, ~] = kShortestPath(D, src, dst, 1);
-        % Store as a cell of cells for compatibility
-        shortestPaths{f} = {shortestPath{1}};
     end
 end
 
+% Separate delays by service type
+unicast1Delays = atrasos(T(:, 1) == 1);
+unicast2Delays = atrasos(T(:, 1) == 2);
+anycastDelays = atrasos(T(:, 1) == 3);
 
-% Prepare input for calculateLinkLoads
-Solution = ones(1, nFlows); % Use the first path for all flows
-Loads = calculateLinkLoads(nNodes, Links, T, shortestPaths, Solution);
+% Compute metrics
+worstUnicast1Delay = max(unicast1Delays) * 1000;
+averageUnicast1Delay = mean(unicast1Delays) * 1000;
+worstUnicast2Delay = max(unicast2Delays) * 1000;
+averageUnicast2Delay = mean(unicast2Delays) * 1000;
+worstAnycastDelay = max(anycastDelays) * 1000;
+averageAnycastDelay = mean(anycastDelays) * 1000;
+
+% Display results
+fprintf('Anycast nodes = %d %d\n', anycastNodes(1), anycastNodes(2));
+fprintf('Worst round-trip delay (unicast service 1) = %.2f ms\n', worstUnicast1Delay);
+fprintf('Average round-trip delay (unicast service 1) = %.2f ms\n', averageUnicast1Delay);
+fprintf('Worst round-trip delay (unicast service 2) = %.2f ms\n', worstUnicast2Delay);
+fprintf('Average round-trip delay (unicast service 2) = %.2f ms\n', averageUnicast2Delay);
+fprintf('Worst round-trip delay (anycast service) = %.2f ms\n', worstAnycastDelay);
+fprintf('Average round-trip delay (anycast service) = %.2f ms\n', averageAnycastDelay);
+
+% Compute the link loads using the first (shortest) path of each flow
+sol = ones(1, nFlows);
+Loads = calculateLinkLoads(nNodes, Links, Taux, sP, sol);
+
+% Determine the worst link load
+maxLoad = max(max(Loads(:, 3:4)));
 
 % Display link loads
 fprintf('Link Loads (Gbps):\n');
-for i = 1:size(Links, 1)
+for i = 1:nLinks
     fprintf('Link %d-%d: Forward %.2f Gbps, Reverse %.2f Gbps\n', ...
-            Loads(i, 1), Loads(i, 2), Loads(i, 3), Loads(i, 4));
+        Loads(i, 1), Loads(i, 2), Loads(i, 3), Loads(i, 4));
 end
 
-% Determine the worst link load
-worstLoad = max(max(Loads(:, 3:4)));
-fprintf('Worst Link Load: %.2f Gbps\n', worstLoad);
+fprintf('Worst Link Load: %.2f Gbps\n', maxLoad);

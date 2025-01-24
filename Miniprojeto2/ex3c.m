@@ -5,165 +5,98 @@ clc
 % Load input data
 load('InputDataProject2.mat');
 
-% Constants
-v = 2e5; % Speed of light in fiber (km/s)
-
-% Calculate propagation delay matrix (in seconds)
-D = L / v;
-
-% Parameters
 nNodes = size(Nodes, 1);
-nLinks = size(Links, 1);
 nFlows = size(T, 1);
-k = 12; % Number of candidate paths/pairs
-timeLimit = 60; % Time limit for the algorithm
-anycastNodes = [4, 12]; % Selected anycast nodes from experiment 1.d
+nLinks = size(Links, 1);
+k = 12;
+timeLimit = 60;
 
-% Generate candidate paths/pairs
-sP = cell(1, nFlows);
-nSP = zeros(1, nFlows);
+v = 2e5; 
+D = L / v; 
+anycast_nodes = [4,12];
+Taux = zeros(nFlows, 4);
+nSP = zeros(nFlows, 1);
+delays = cell(nFlows, 1);
+numPathsPerFlow = zeros(nFlows, 1);
+sP = cell(2, nFlows);
 
 for f = 1:nFlows
-    src = T(f, 2);
-    dst = T(f, 3);
-    service = T(f, 1);
-
-    if service == 1 % Unicast service s = 1
-        [shortestPath, totalCost] = kShortestPath(D, src, dst, k);
-        sP{f} = shortestPath;
-        nSP(f) = length(totalCost);
-    elseif service == 2 % Unicast service s = 2 with 1:1 protection
-        [firstPaths, secondPaths, totalPairCosts] = kShortestPathPairs(D, src, dst, k);
-        for i = 1:length(totalPairCosts)
-            sP{f}{i} = {firstPaths{i}, secondPaths{i}}; % Store pairs as nested cell arrays
-        end
-        nSP(f) = length(totalPairCosts);
-    elseif service == 3 % Anycast service
-        % Compute shortest paths to both anycast nodes
-        try
-            [shortestPath1, totalCost1] = kShortestPath(D, src, anycastNodes(1), k);
-        catch
-            totalCost1 = [];
-        end
-        try
-            [shortestPath2, totalCost2] = kShortestPath(D, src, anycastNodes(2), k);
-        catch
-            totalCost2 = [];
-        end
-
-        % Validate and select the best path
-        if ~isempty(totalCost1) && ~isempty(totalCost2)
-            if totalCost1(1) <= totalCost2(1)
-                sP{f} = shortestPath1;
-                nSP(f) = length(totalCost1);
-            else
-                sP{f} = shortestPath2;
-                nSP(f) = length(totalCost2);
-            end
-        elseif ~isempty(totalCost1)
-            sP{f} = shortestPath1;
-            nSP(f) = length(totalCost1);
-        elseif ~isempty(totalCost2)
-            sP{f} = shortestPath2;
-            nSP(f) = length(totalCost2);
+    if T(f, 1) == 1  % Tipo do fluxo: Unicast 1
+        [shortestPath, totalCost] = kShortestPath(D, T(f, 2), T(f, 3), k);
+        sP{1, f} = shortestPath;
+        sP{2, f} = {};
+        nSP(f) = length(shortestPath{1});
+        numPaths = length(totalCost); 
+        numPathsPerFlow(f) = numPaths; 
+        delays{f} = totalCost;
+        Taux(f, :) = T(f, 2:5);
+    elseif T(f, 1) == 2  % Tipo do fluxo: Unicast 2
+        [shortestPath, secondPath, totalCost] = kShortestPathPairs(D, T(f, 2), T(f, 3), k);
+        sP{1, f} = shortestPath;
+        sP{2, f} = secondPath;
+        nSP(f) = length(shortestPath{1});
+        numPaths = length(totalCost);
+        numPathsPerFlow(f) = numPaths; 
+        delays{f} = totalCost;
+        Taux(f, :) = T(f, 2:5);
+    elseif T(f, 1) == 3  % Tipo do fluxo: Anycast
+        if ismember(T(f, 2), anycast_nodes)
+            sP{1, f} = {T(f, 2)};
+            sP{2, f} = {};
+            nSP(f) = 1;
+            Taux(f, :) = T(f, 2:5);
+            Taux(f, 2) = T(f, 2);
         else
-            error('No valid paths found for flow %d from node %d to anycast nodes.', f, src);
-        end
-    end
-end
-
-% Expand paths to handle link-disjoint cases
-expandedPaths = cell(1, nFlows);
-for f = 1:nFlows
-    if T(f, 1) == 2 % Link-disjoint case
-        % Flatten all candidate pairs into individual paths
-        tempPaths = {};
-        for i = 1:nSP(f)
-            tempPaths{end + 1} = sP{f}{i}{1}; % First path in pair
-            tempPaths{end + 1} = sP{f}{i}{2}; % Second path in pair
-        end
-        expandedPaths{f} = tempPaths;
-    else
-        expandedPaths{f} = sP{f};
-    end
-end
-
-% Multi Start Hill Climbing algorithm
-t = tic;
-bestLoad = inf;
-contador = 0;
-somador = 0;
-bestLoadTime = 0;
-
-while toc(t) < timeLimit
-    % Greedy randomized start
-    [sol, load] = greedyRandomizedStrategy(nNodes, Links, T, expandedPaths, nSP);
-
-    % Hill climbing optimization
-    [sol, load] = HillClimbingStrategy(nNodes, Links, T, expandedPaths, nSP, sol, load);
-
-    % Calculate final link loads
-    Loads = calculateLinkLoads(nNodes, Links, T, expandedPaths, sol);
-    load = max(max(Loads(:, 3:4))); % Worst link load
-
-    % Update the best solution if the current one is better
-    if load < bestLoad
-        bestSol = sol;
-        bestLoad = load;
-        bestLoads = Loads;
-        bestLoadTime = toc(t);
-    end
-
-    % Track performance parameters
-    contador = contador + 1;
-    somador = somador + load;
-end
-
-% Calculate round-trip delays
-roundTripDelays = zeros(1, nFlows);
-for f = 1:nFlows
-    src = T(f, 2);
-    dst = T(f, 3);
-    service = T(f, 1);
-
-    if service == 3 % Anycast service
-        minDelay = inf;
-        for acNode = anycastNodes
-            try
-                [~, totalCost] = kShortestPath(D, src, acNode, 1);
-                if totalCost < minDelay
-                    minDelay = totalCost;
+            cost = inf;
+            Taux(f, :) = T(f, 2:5);
+            for i = anycast_nodes
+                [shortestPath, totalCost] = kShortestPath(D, T(f, 2), i, 1);
+                numPaths = length(totalCost);
+                numPathsPerFlow(f) = numPaths;
+                if max(totalCost) < cost
+                    sP{1, f} = shortestPath;
+                    nSP(f) = 1;
+                    cost = totalCost;
+                    delays{f} = totalCost;
+                    Taux(f, 2) = i;
                 end
-            catch
             end
         end
-        roundTripDelays(f) = minDelay * 2; % Round-trip delay
-    else
-        try
-            [~, totalCost] = kShortestPath(D, src, dst, 1);
-            roundTripDelays(f) = totalCost * 2; % Round-trip delay
-        catch
-        end
     end
 end
 
-% Calculate average and worst round-trip delays per service
-avgDelays = zeros(1, 3);
-worstDelays = zeros(1, 3);
-for service = 1:3
-    delays = roundTripDelays(T(:, 1) == service);
-    avgDelays(service) = mean(delays) * 1e3; % Convert to ms
-    worstDelays(service) = max(delays) * 1e3; % Convert to ms
+tStart = tic;
+bestObjective = inf;
+noCycles = 0;
+totalObjective = 0;
+while toc(tStart) < timeLimit
+        sol = greedyRandomizedStrategy1(nNodes, Links, Taux, sP, numPathsPerFlow);
+        [sol, objective] = HillClimbingStrategy1(nNodes, Links, Taux, sP, numPathsPerFlow, sol);
+        totalObjective = totalObjective + objective;
+        noCycles = noCycles + 1;
+        if objective < bestObjective
+            bestObjective = objective;
+            bestSol = sol;
+            timeSolution = toc(tStart);
+        end
 end
+avObjective = totalObjective / noCycles;
 
-% Display results
-fprintf('Experiment 3.c with Anycast Nodes 4 and 12:\n');
-fprintf('\tWorst Link Load = %.2f Gbps\n', bestLoad);
-fprintf('\tNumber of Solutions Explored = %d\n', contador);
-fprintf('\tAverage Worst Link Load = %.2f Gbps\n', somador / contador);
-fprintf('\tTime to Best Solution = %.2f seconds\n', bestLoadTime);
+worstDelay_s1 = max([delays{T(:,1) == 1}]); 
+averageDelay_s1 = mean([delays{T(:,1) == 1}]);
 
-fprintf('\nRound-Trip Delays (ms):\n');
-fprintf('\tService 1: Worst = %.2f ms, Average = %.2f ms\n', worstDelays(1), avgDelays(1));
-fprintf('\tService 2: Worst = %.2f ms, Average = %.2f ms\n', worstDelays(2), avgDelays(2));
-fprintf('\tService 3: Worst = %.2f ms, Average = %.2f ms\n', worstDelays(3), avgDelays(3));
+worstDelay_s2 = max([delays{T(:,1) == 2}]);
+averageDelay_s2 = mean([delays{T(:,1) == 2}]);
+
+worstDelay_s3 = max([delays{T(:,1) == 3}]); 
+averageDelay_s3 = mean([delays{T(:,1) == 3}]); 
+
+
+fprintf("Multi start hill climbing with greedy randomized, anycast in nodes 4 and 12:\n")
+fprintf("W = %.2f Gbps, No. sol = %d, Av. W = %.2f, time = %.2f sec\n", bestObjective, noCycles, avObjective, timeSolution)
+fprintf("Unicast 1 - Worst round-trip delay: %.2f ms\n", worstDelay_s1 * 2 * 10^3)
+fprintf("Unicast 1 - Average round-trip delay: %.2f ms\n", averageDelay_s1 * 2 * 10^3)
+fprintf("Unicast 2 - Worst round-trip delay: %.2f ms\n", worstDelay_s2 * 2 * 10^3)
+fprintf("Unicast 2 - Average round-trip delay: %.2f ms\n", averageDelay_s2 * 2 * 10^3)
+fprintf("Anycast - Worst round-trip delay: %.2f ms\n", worstDelay_s3 * 2 * 10^3)
+fprintf("Anycast - Average round-trip delay: %.2f ms\n", averageDelay_s3 * 2 * 10^3)

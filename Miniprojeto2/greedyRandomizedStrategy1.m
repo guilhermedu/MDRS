@@ -1,4 +1,4 @@
-function sol = greedyRandomizedStrategy(nNodes, Links, T, sP, nSP)
+function sol = greedyRandomizedStrategy1(nNodes, Links, T, sP, nSP)
     nFlows = size(T, 1);
     sol = zeros(1, nFlows);
     
@@ -8,7 +8,7 @@ function sol = greedyRandomizedStrategy(nNodes, Links, T, sP, nSP)
         for p = candidatePaths
             tempSol = sol;
             tempSol(f) = p;
-            Loads = calculateLinkLoads(nNodes, Links, T, sP, tempSol);
+            Loads = calculateLinkBand1to1(nNodes, Links, T, sP, tempSol);
             pathLoads(p) = max(max(Loads(:,3:4)));
         end
         % Seleciona o caminho com menor carga com um elemento de aleatoriedade
